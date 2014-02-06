@@ -58,7 +58,7 @@ class CommandChannel(channel.SSHChannel):
 
     def _timeoutCalled(self):
         if not self.result.called:
-            self.result.errback(failure.Failure(TimeoutError))
+            self.result.errback(TimeoutError())
         self.timeoutId = None
         self.loseConnection()
 
@@ -114,7 +114,7 @@ class SFTPChannel(channel.SSHChannel):
                                                     self._timeoutCalled)
 
     def _timeoutCalled(self):
-        self.clientHandle.errback(failure.Failure(TimeoutError))
+        self.clientHandle.errback(TimeoutError())
         self.timeoutId = None
         self.loseConnection()
 
