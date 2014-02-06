@@ -100,6 +100,7 @@ class SFTPChannel(channel.SSHChannel):
         self.conn = connection
         self.timeout = timeout
         self.reactor = reactor
+        self.timeoutId = None
         log.debug('SFTP Channel initialized')
 
     def timeoutCancel(self):
@@ -124,11 +125,13 @@ class SFTPChannel(channel.SSHChannel):
         d.addCallbacks(self._cbSFTP)
 
     def _cbSFTP(self, result):
-
+        self.startTimer()
         client = FileTransferClient()
         client.makeConnection(self)
         self.dataReceived = client.dataReceived
+        log.debug('setting clientHandle to be %s' % client)
         self.clientHandle.callback(client)
+        self.timeoutCancel()
         log.debug('Created SFTP Client')
 
     def openFailed(self, reason):

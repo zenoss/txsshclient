@@ -1,14 +1,19 @@
 from test_common import SSHServer, ServerProtocol, ClientProtocol
-from sshclient.test5 import SSHClient
+from sshclient import SSHClient
 from twisted.trial.unittest import TestCase
 from twisted.internet import reactor, defer
 import getpass
 import logging
+#logging.basicConfig()
+#from twisted.python import log as twistedlog
+#observer = twistedlog.PythonLoggingObserver()
+#observer.start()
 log = logging.getLogger('test_functional')
 
 import tempfile
 import os
 import shutil
+
 
 def touch(path):
     with open(path, 'a'):
@@ -27,18 +32,18 @@ class IPV4FunctionalBaseTestCase(TestCase):
         self.portnum = self.port.getHost().port
 
         options = {'hostname': self.hostname,
-               'port': self.portnum,
-               'user': self.user,
-               'password': self.password,
-               'buffersize': 32768}
+                   'port': self.portnum,
+                   'user': self.user,
+                   'password': self.password,
+                   'buffersize': 32768}
 
         self.client = SSHClient(options)
-        self.client.factory.protocol = ClientProtocol
+        self.client.protocol = ClientProtocol
         self.client.connect()
-        #self.client.factory.protocol.onConnectionLost = defer.Deferred()
 
     def tearDown(self):
         # Shut down the server and client
+        log.debug('tearing down')
         port, self.port = self.port, None
         client, self.client = self.client, None
         server, self.server = self.server, None
@@ -49,9 +54,8 @@ class IPV4FunctionalBaseTestCase(TestCase):
         # Tell the client to disconnect and not retry.
         client.disconnect()
 
-        # Wait for the deferred that tell us we disconnected.
         return defer.gatherResults([d,
-                                    client.factory.onConnectionLost,
+                                    client.onConnectionLost,
                                     server.onConnectionLost])
 
     def test_run_command(self):
@@ -60,7 +64,7 @@ class IPV4FunctionalBaseTestCase(TestCase):
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (1, 'hi\n', ''))
+            self.assertEquals(data,  (0, 'hi\n', ''))
             return data
 
         d.addCallback(got_hi)
@@ -210,8 +214,6 @@ class IPV4FunctionalBaseTestCase(TestCase):
             shutil.rmtree(source_sandbox)
             shutil.rmtree(destination_sandbox)
 
-
-
     # TODO
     # chown, chgrp, chmod
 
@@ -235,18 +237,18 @@ class IPV6FunctionalBaseTestCase(TestCase):
         self.portnum = self.port.getHost().port
 
         options = {'hostname': self.hostname,
-               'port': self.portnum,
-               'user': self.user,
-               'password': self.password,
-               'buffersize': 32768}
+                   'port': self.portnum,
+                   'user': self.user,
+                   'password': self.password,
+                   'buffersize': 32768}
 
         self.client = SSHClient(options)
-        self.client.factory.protocol = ClientProtocol
+        self.client.protocol = ClientProtocol
         self.client.connect()
-        #self.client.factory.protocol.onConnectionLost = defer.Deferred()
 
     def tearDown(self):
         # Shut down the server and client
+        log.debug('tearing down')
         port, self.port = self.port, None
         client, self.client = self.client, None
         server, self.server = self.server, None
@@ -257,9 +259,8 @@ class IPV6FunctionalBaseTestCase(TestCase):
         # Tell the client to disconnect and not retry.
         client.disconnect()
 
-        # Wait for the deferred that tell us we disconnected.
         return defer.gatherResults([d,
-                                    client.factory.onConnectionLost,
+                                    client.onConnectionLost,
                                     server.onConnectionLost])
 
     def test_run_command(self):
@@ -268,7 +269,7 @@ class IPV6FunctionalBaseTestCase(TestCase):
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (1, 'hi\n', ''))
+            self.assertEquals(data,  (0, 'hi\n', ''))
             return data
 
         d.addCallback(got_hi)

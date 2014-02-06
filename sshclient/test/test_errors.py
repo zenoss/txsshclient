@@ -6,14 +6,10 @@ import getpass
 import logging
 log = logging.getLogger('test_exec')
 
-import tempfile
-import os
+from twisted.internet.error import ConnectionLost, ConnectError, UserError
+
 import shutil
-
-from twisted.internet.error import ConnectError, ConnectionDone, TimeoutError
-from twisted.internet.error import ConnectionRefusedError
-from twisted.internet.error import ConnectionLost
-
+import tempfile
 import logging
 #logging.basicConfig(level=logging.DEBUG)
 #logging.basicConfig(level=logging.INFO)
@@ -22,7 +18,7 @@ import logging
 #observer.start()
 log = logging.getLogger('test_errors')
 
-class IPV4FunctionalErrorTestCase(TestCase):
+class IPV4FunctionalNoServerTestCase(TestCase):
     def setUp(self):
         self.hostname = '127.0.0.1'
         self.user = getpass.getuser()
@@ -34,15 +30,14 @@ class IPV4FunctionalErrorTestCase(TestCase):
         self.portnum = self.port.getHost().port
 
         options = {'hostname': self.hostname,
-               'port': self.portnum+1,
-               'user': self.user,
-               'password': self.password,
-               'buffersize': 32768}
+                   'port': self.portnum+1,
+                   'user': self.user,
+                   'password': self.password,
+                   'buffersize': 32768}
 
         self.client = SSHClient(options)
         self.client.protocol = ClientProtocol
         self.client.connect()
-        #self.client.factory.protocol.onConnectionLost = defer.Deferred()
 
     def tearDown(self):
         # Shut down the server and client
@@ -77,7 +72,7 @@ class IPV4FunctionalErrorTestCase(TestCase):
         return self.assertFailure(d, ConnectError)
 
 
-class IPV4FunctionalReconnectTestCase(TestCase):
+class IPV4FunctionalTestCase(TestCase):
     def setUp(self):
         self.hostname = '127.0.0.1'
         self.user = getpass.getuser()
@@ -111,19 +106,10 @@ class IPV4FunctionalReconnectTestCase(TestCase):
         # Tell the client to disconnect and not retry.
         client.disconnect()
 
-        # Wait for the deferred that tell us we disconnected.
-        log.debug("%s %s %s" % (d, client, server))
-        #import pdb;pdb.set_trace()
-        #dl = []
-        #if d:
-        #    dl.append(d)
-        #dl.append(client.onConnectionLost)
-        #dl.append(server.onConnectionLost)
-        #return defer.gatherResults(dl)
-
         return defer.gatherResults([d,
                                     client.onConnectionLost,
                                     server.onConnectionLost])
+
     def test_run_command(self):
 
         def server_stop_listening(data):
