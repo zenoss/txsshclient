@@ -360,6 +360,7 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _cbchmod(self, client, path, perms, result):
+        log.debug('in cbchmod')
         perms = int(perms, 8)
         d = client.setAttrs(path, {'permissions': perms})
         d.addBoth(self._cbdone, result)

@@ -57,6 +57,7 @@ class CommandChannel(channel.SSHChannel):
                                                     self._timeoutCalled)
 
     def _timeoutCalled(self):
+        log.debug('timeout triggered')
         if not self.result.called:
             self.result.errback(TimeoutError())
         self.timeoutId = None

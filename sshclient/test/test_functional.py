@@ -2,12 +2,14 @@ from test_common import SSHServer, ServerProtocol, ClientProtocol
 from sshclient import SSHClient
 from twisted.trial.unittest import TestCase
 from twisted.internet import reactor, defer
+from twisted.conch.ssh.filetransfer import SFTPError
+
 import getpass
 import logging
-#logging.basicConfig()
-#from twisted.python import log as twistedlog
-#observer = twistedlog.PythonLoggingObserver()
-#observer.start()
+logging.basicConfig(level=logging.DEBUG)
+from twisted.python import log as twistedlog
+observer = twistedlog.PythonLoggingObserver()
+observer.start()
 log = logging.getLogger('test_functional')
 
 import tempfile
@@ -83,6 +85,10 @@ class IPV4FunctionalBaseTestCase(TestCase):
             defer.returnValue(d)
         finally:
             shutil.rmtree(sandbox)
+
+    def test_lsdir_no_dir(self):
+        d = self.client.ls('/_not_real')
+        return self.assertFailure(d, SFTPError)
 
     @defer.inlineCallbacks
     def test_mkdir(self):
@@ -214,6 +220,51 @@ class IPV4FunctionalBaseTestCase(TestCase):
             shutil.rmtree(source_sandbox)
             shutil.rmtree(destination_sandbox)
 
+    @defer.inlineCallbacks
+    def test_chown(self):
+        try:
+            chown_filename = 'test_chown_file'
+            sandbox = tempfile.mkdtemp()
+            chown_path = '/'.join([sandbox, chown_filename])
+            touch(chown_path)
+
+            result = yield self.client.chown(chown_path, 1000)
+
+            self.assertEquals(result[0], 'setstat succeeded')
+            defer.returnValue(result)
+        finally:
+            shutil.rmtree(sandbox)
+
+
+    @defer.inlineCallbacks
+    def test_chgrp(self):
+        try:
+            chgrp_filename = 'test_chgrp_file'
+            sandbox = tempfile.mkdtemp()
+            chgrp_path = '/'.join([sandbox, chgrp_filename])
+            touch(chgrp_path)
+
+            result = yield self.client.chgrp(chgrp_path, 1000)
+
+            self.assertEquals(result[0], 'setstat succeeded')
+            defer.returnValue(result)
+        finally:
+            shutil.rmtree(sandbox)
+
+    @defer.inlineCallbacks
+    def test_chmod(self):
+        try:
+            chmod_filename = 'test_chmod_file'
+            sandbox = tempfile.mkdtemp()
+            chmod_path = '/'.join([sandbox, chmod_filename])
+            touch(chmod_path)
+
+            result = yield self.client.chmod(chmod_path, '1000')
+
+            self.assertEquals(result[0], 'setstat succeeded')
+            defer.returnValue(result)
+        finally:
+            shutil.rmtree(sandbox)
     # TODO
     # chown, chgrp, chmod
 

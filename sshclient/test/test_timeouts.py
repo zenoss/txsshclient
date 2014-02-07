@@ -1,10 +1,10 @@
-from test_common import SSHServer, ServerProtocol, ClientProtocol
+from test_common import SlowSSHServer, ServerProtocol, ClientProtocol
 from sshclient import SSHClient
 from twisted.trial.unittest import TestCase
 from twisted.internet import reactor, defer
 import getpass
 import logging
-#logging.basicConfig()
+#logging.basicConfig(level=logging.DEBUG)
 #from twisted.python import log as twistedlog
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
@@ -26,7 +26,7 @@ class IPV4TimeoutTestCase(TestCase):
         self.hostname = '127.0.0.1'
         self.user = getpass.getuser()
         self.password = 'dummyTestPassword'
-        self.server = SSHServer()
+        self.server = SlowSSHServer()
         self.server.protocol = ServerProtocol
 
         self.port = reactor.listenTCP(0, self.server, interface=self.hostname)
@@ -61,8 +61,12 @@ class IPV4TimeoutTestCase(TestCase):
 
     def test_run_command(self):
 
-        d = self.client.run('sleep 2 && ls', timeout=1)
+        d = self.client.run('ls', timeout=1)
         return self.assertFailure(d, TimeoutError)
+
+    #def test_lsdir(self):
+    #    d = self.client.ls('/', timeout=1)
+    #    return self.assertFailure(d, TimeoutError)
 
 '''
     @defer.inlineCallbacks

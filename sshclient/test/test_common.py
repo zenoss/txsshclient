@@ -85,9 +85,20 @@ class NoRootUnixConchUser(UnixConchUser):
                 args = len(i)>1 and i[1] or ()
                 kw = len(i)>2 and i[2] or {}
                 r = func(*args, **kw)
-        except Exception:
-            r = None
+        finally:
+            pass
         return r
+
+
+class SlowNoRootUnixConchUser(NoRootUnixConchUser):
+    ''' Same as NoRootUnixConchUser but returns group Id's slowly
+        This is enough to make our ftp client timeout. '''
+
+    def getUserGroupId(self):
+        import time
+        log.debug('Inserting artificial 3 second delay')
+        time.sleep(3)
+        return (None, None)
 
 
 class NoRootUnixSSHRealm:
@@ -96,6 +107,14 @@ class NoRootUnixSSHRealm:
 
     def requestAvatar(self, username, mind, *interfaces):
         user = NoRootUnixConchUser(username)
+        return interfaces[0], user, user.logout
+
+class SlowNoRootUnixSSHRealm:
+    '''Create a SSH Realm that will not need to fork as root and be slow'''
+    interface.implements(portal.IRealm)
+
+    def requestAvatar(self, username, mind, *interfaces):
+        user = SlowNoRootUnixConchUser(username)
         return interfaces[0], user, user.logout
 
 
@@ -115,8 +134,15 @@ class SSHServer(SSHFactory):
         return self.protocol
 
 
+class SlowSSHServer(SSHServer):
+    'Simulate an OpenSSH server.'
+    portal = Portal(SlowNoRootUnixSSHRealm())
+    portal.registerChecker(DummyChecker())
+
+
 class ServerProtocol(transport.SSHServerTransport):
     log = logging.getLogger('test_common - ServerProtocol')
+
     def currentlyConnected(self):
         return self.factory.onConnectionLost
 
