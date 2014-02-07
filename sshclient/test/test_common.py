@@ -15,6 +15,8 @@ from twisted.conch.ssh import transport
 from twisted.internet import protocol
 
 from sshclient import SSHClient
+from sshclient import SSHTransport
+
 from zope import interface
 from twisted.cred import portal
 import getpass
@@ -96,9 +98,28 @@ class SlowNoRootUnixConchUser(NoRootUnixConchUser):
 
     def getUserGroupId(self):
         import time
-        log.debug('Inserting artificial 3 second delay')
-        time.sleep(3)
+        log.debug('getUserGroupId: 2 second delay')
+        time.sleep(2)
         return (None, None)
+
+    def _runAsUser(self, f, *args, **kw):
+        import time
+        log.debug('_runAsUser: .25 second delay %s' % f)
+        time.sleep(.25)
+        try:
+            f = iter(f)
+        except TypeError:
+            f = [(f, args, kw)]
+        try:
+            for i in f:
+                func = i[0]
+                args = len(i)>1 and i[1] or ()
+                kw = len(i)>2 and i[2] or {}
+                r = func(*args, **kw)
+        finally:
+            pass
+        return r
+
 
 
 class NoRootUnixSSHRealm:
@@ -155,8 +176,6 @@ class ServerProtocol(transport.SSHServerTransport):
         log.info("Server Connection Lost")
         self.factory.onConnectionLost.callback(self)
         transport.SSHServerTransport.connectionLost(self, reason)
-
-from sshclient import SSHTransport
 
 
 class ClientProtocol(SSHTransport):

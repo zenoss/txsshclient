@@ -6,7 +6,6 @@ import struct
 from twisted.conch.ssh.common import NS
 from twisted.conch.ssh.filetransfer import FileTransferClient
 from twisted.internet.error import TimeoutError
-from twisted.python import failure
 
 import logging
 log = logging.getLogger('channel')
@@ -42,13 +41,14 @@ class CommandChannel(channel.SSHChannel):
             res = (reason.data, reason.value)
         else:
             res = (reason.code, reason.desc)
-
-        self.result.errback(res)
+        if not self.result.called:
+            self.result.errback(res)
         channel.SSHChannel.openFailed(self, reason)
 
     def timeoutCancel(self):
         if self.timeoutId:
             self.timeoutId.cancel()
+            self.timeoutId = None
 
     def startTimer(self):
         if self.timeout:
@@ -71,6 +71,10 @@ class CommandChannel(channel.SSHChannel):
                                     common.NS(self.command),
                                     wantReply=True)
         req.addCallback(lambda _: self.conn.sendEOF(self))
+
+        def passthru(data):
+            return data
+        req.addErrback(passthru)
         return req
 
     def dataReceived(self, data):
@@ -84,40 +88,24 @@ class CommandChannel(channel.SSHChannel):
         self.exit = struct.unpack('>L', data)[0]
 
         log.debug('Sending results back to the callback')
-        self.result.callback((self.exit, self.out, self.err))
+        if not self.result.called:
+            self.result.callback((self.exit, self.out, self.err))
 
     def eofReceived(self):
-        if self.result is not None:
-            self.timeoutCancel()
+        self.timeoutCancel()
+
 
 
 class SFTPChannel(channel.SSHChannel):
     name = 'session'
 
-    def __init__(self, clientHandle, connection,
-                 timeout=None, reactor=reactor, *args, **kwargs):
+    def __init__(self, clientHandle, connection, timeout=None, reactor=reactor, *args, **kwargs):
         channel.SSHChannel.__init__(self, *args, **kwargs)
         self.clientHandle = clientHandle
         self.conn = connection
         self.timeout = timeout
         self.reactor = reactor
-        self.timeoutId = None
         log.debug('SFTP Channel initialized')
-
-    def timeoutCancel(self):
-        if self.timeoutId:
-            self.timeoutId.cancel()
-
-    def startTimer(self):
-        if self.timeout:
-            log.debug('starting timer with %s timeout' % self.timeout)
-            self.timeoutId = self.reactor.callLater(self.timeout,
-                                                    self._timeoutCalled)
-
-    def _timeoutCalled(self):
-        self.clientHandle.errback(TimeoutError())
-        self.timeoutId = None
-        self.loseConnection()
 
     def channelOpen(self, whatever):
         log.debug('SFTP Channel opened')
@@ -126,13 +114,11 @@ class SFTPChannel(channel.SSHChannel):
         d.addCallbacks(self._cbSFTP)
 
     def _cbSFTP(self, result):
-        self.startTimer()
         client = FileTransferClient()
         client.makeConnection(self)
         self.dataReceived = client.dataReceived
         log.debug('setting clientHandle to be %s' % client)
         self.clientHandle.callback(client)
-        self.timeoutCancel()
         log.debug('Created SFTP Client')
 
     def openFailed(self, reason):

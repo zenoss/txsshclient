@@ -6,7 +6,7 @@ import getpass
 import logging
 log = logging.getLogger('test_exec')
 
-from twisted.internet.error import ConnectionLost, ConnectError, UserError
+from twisted.internet.error import ConnectionLost, ConnectError
 
 import shutil
 import tempfile
@@ -17,6 +17,7 @@ import logging
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
 log = logging.getLogger('test_errors')
+
 
 class IPV4FunctionalNoServerTestCase(TestCase):
     def setUp(self):

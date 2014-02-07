@@ -1,4 +1,5 @@
 from test_common import SlowSSHServer, ServerProtocol, ClientProtocol
+from test_common import SSHServer
 from sshclient import SSHClient
 from twisted.trial.unittest import TestCase
 from twisted.internet import reactor, defer
@@ -21,7 +22,7 @@ def touch(path):
         os.utime(path, None)
 
 
-class IPV4TimeoutTestCase(TestCase):
+class IPV4FTPTimeoutTestCase(TestCase):
     def setUp(self):
         self.hostname = '127.0.0.1'
         self.user = getpass.getuser()
@@ -59,168 +60,62 @@ class IPV4TimeoutTestCase(TestCase):
                                     client.onConnectionLost,
                                     server.onConnectionLost])
 
-    def test_run_command(self):
-
-        d = self.client.run('ls', timeout=1)
+    def test_lsdir_timeout_fail(self):
+        d = self.client.ls('/tmp', timeout=1)
         return self.assertFailure(d, TimeoutError)
 
-    #def test_lsdir(self):
-    #    d = self.client.ls('/', timeout=1)
-    #    return self.assertFailure(d, TimeoutError)
-
-'''
     @defer.inlineCallbacks
-    def test_lsdir(self):
+    def test_lsdir_timeout_pass(self):
         try:
             test_file = 'test_ls_dir'
             sandbox = tempfile.mkdtemp()
             testfile = '/'.join([sandbox, test_file])
             touch(testfile)
-            d = yield self.client.ls(sandbox)
+            d = yield self.client.ls(sandbox, timeout=60)
 
             self.assertEquals(d[0][0], test_file)
             defer.returnValue(d)
         finally:
             shutil.rmtree(sandbox)
 
-    @defer.inlineCallbacks
-    def test_mkdir(self):
-        try:
-            sandbox = tempfile.mkdtemp()
-            test_dir = 'tmpMkdir'
-            directory = '/'.join([sandbox, test_dir])
-            result = yield self.client.mkdir(directory)
-            self.assertEquals(result[0], 'mkdir succeeded')
-            self.assertTrue(os.path.isdir(directory))
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(sandbox)
+class IPV4CommandTimeoutTestCase(TestCase):
+    def setUp(self):
+        self.hostname = '127.0.0.1'
+        self.user = getpass.getuser()
+        self.password = 'dummyTestPassword'
+        self.server = SSHServer()
+        self.server.protocol = ServerProtocol
 
-    @defer.inlineCallbacks
-    def test_rmdir(self):
-        try:
-            sandbox = tempfile.mkdtemp()
-            test_dir = 'tmpRmdir'
-            directory = '/'.join([sandbox, test_dir])
-            os.mkdir(directory)
-            result = yield self.client.rmdir(directory)
-            self.assertEquals(result[0], 'rmdir succeeded')
-            self.assertFalse(os.path.exists(directory))
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(sandbox)
+        self.port = reactor.listenTCP(0, self.server, interface=self.hostname)
+        self.portnum = self.port.getHost().port
 
-    @defer.inlineCallbacks
-    def test_rename(self):
-        try:
-            original_filename = 'test_rename'
-            destination_filename = 'test_rename_changed'
-            sandbox = tempfile.mkdtemp()
-            original_path = '/'.join([sandbox, original_filename])
-            destination_path = '/'.join([sandbox, destination_filename])
-            touch(original_path)
+        options = {'hostname': self.hostname,
+                   'port': self.portnum,
+                   'user': self.user,
+                   'password': self.password,
+                   'buffersize': 32768}
 
-            result = yield self.client.rename(original_path,
-                                              destination_path)
-            self.assertEquals(result[0], 'rename succeeded')
-            self.assertFalse(os.path.exists(original_path))
-            self.assertTrue(os.path.exists(destination_path))
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(sandbox)
+        self.client = SSHClient(options)
+        self.client.protocol = ClientProtocol
+        self.client.connect()
 
-    @defer.inlineCallbacks
-    def test_ln(self):
-        try:
-            original_filename = 'test_ln'
-            destination_filename = 'test_ln_destination'
-            sandbox = tempfile.mkdtemp()
-            original_path = '/'.join([sandbox, original_filename])
-            destination_path = '/'.join([sandbox, destination_filename])
-            touch(original_path)
-            result = yield self.client.ln(destination_path, original_path)
+    def tearDown(self):
+        # Shut down the server and client
+        log.debug('tearing down')
+        port, self.port = self.port, None
+        client, self.client = self.client, None
+        server, self.server = self.server, None
 
-            self.assertEquals(result[0], 'symlink succeeded')
-            self.assertTrue(os.path.isfile(original_path))
-            self.assertTrue(os.path.islink(destination_path))
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(sandbox)
+        # A Deferred for the server listening port
+        d = port.stopListening()
 
-    @defer.inlineCallbacks
-    def test_rm(self):
-        try:
-            original_filename = 'test_rm_file'
-            sandbox = tempfile.mkdtemp()
-            original_path = '/'.join([sandbox, original_filename])
-            touch(original_path)
+        # Tell the client to disconnect and not retry.
+        client.disconnect()
 
-            result = yield self.client.rm(original_path)
+        return defer.gatherResults([d,
+                                    client.onConnectionLost,
+                                    server.onConnectionLost])
 
-            self.assertEquals(result[0], 'remove succeeded')
-            self.assertFalse(os.path.exists(original_path))
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(sandbox)
-
-    @defer.inlineCallbacks
-    def test_put(self):
-        try:
-            source_data = 'This was my sourcefile...'
-            source_filename = 'test_source_file'
-            destination_filename = 'test_destination_file'
-
-            source_sandbox = tempfile.mkdtemp()
-            destination_sandbox = tempfile.mkdtemp()
-
-            source_path = '/'.join([source_sandbox, source_filename])
-            destination_path = '/'.join([destination_sandbox,
-                                         destination_filename])
-            open(source_path, 'w').write(source_data)
-
-            result = yield self.client.put(source_path, destination_path)
-            self.assertTrue(os.path.isfile(source_path))
-            self.assertTrue(os.path.isfile(destination_path))
-            self.assertEqual(source_data,
-                             open(destination_path, 'r').read())
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(source_sandbox)
-            shutil.rmtree(destination_sandbox)
-
-    @defer.inlineCallbacks
-    def test_get(self):
-        try:
-            source_data = 'This was my sourcefile...'
-            source_filename = 'test_source_file'
-            destination_filename = 'test_destination_file'
-
-            source_sandbox = tempfile.mkdtemp()
-            destination_sandbox = tempfile.mkdtemp()
-
-            source_path = '/'.join([source_sandbox, source_filename])
-            destination_path = '/'.join([destination_sandbox,
-                                         destination_filename])
-            open(source_path, 'w').write(source_data)
-
-            result = yield self.client.get(source_path, destination_path)
-            self.assertTrue(os.path.isfile(source_path))
-            self.assertTrue(os.path.isfile(destination_path))
-            self.assertEqual(source_data,
-                             open(destination_path, 'r').read())
-            defer.returnValue(result)
-        finally:
-            shutil.rmtree(source_sandbox)
-            shutil.rmtree(destination_sandbox)
-
-    # TODO
-    # chown, chgrp, chmod
-
-
-    #reactor.callWhenRunning(run)
-
-
-    #reactor.callWhenRunning(put)
-    #reactor.callWhenRunning(get)
-
-'''
+    def test_run_command_timeout_failed(self):
+        d = self.client.run('sleep 2 && ls', timeout=1)
+        return self.assertFailure(d, TimeoutError)

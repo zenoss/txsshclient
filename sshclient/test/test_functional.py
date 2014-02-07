@@ -6,10 +6,10 @@ from twisted.conch.ssh.filetransfer import SFTPError
 
 import getpass
 import logging
-logging.basicConfig(level=logging.DEBUG)
-from twisted.python import log as twistedlog
-observer = twistedlog.PythonLoggingObserver()
-observer.start()
+#logging.basicConfig(level=logging.DEBUG)
+#from twisted.python import log as twistedlog
+#observer = twistedlog.PythonLoggingObserver()
+#observer.start()
 log = logging.getLogger('test_functional')
 
 import tempfile
@@ -228,7 +228,10 @@ class IPV4FunctionalBaseTestCase(TestCase):
             chown_path = '/'.join([sandbox, chown_filename])
             touch(chown_path)
 
-            result = yield self.client.chown(chown_path, 1000)
+            import os
+            import pwd
+            uid = pwd.getpwuid( os.getuid() ).pw_uid
+            result = yield self.client.chown(chown_path, uid)
 
             self.assertEquals(result[0], 'setstat succeeded')
             defer.returnValue(result)
@@ -244,7 +247,10 @@ class IPV4FunctionalBaseTestCase(TestCase):
             chgrp_path = '/'.join([sandbox, chgrp_filename])
             touch(chgrp_path)
 
-            result = yield self.client.chgrp(chgrp_path, 1000)
+            import os
+            import pwd
+            gid = pwd.getpwuid( os.getuid() ).pw_gid
+            result = yield self.client.chgrp(chgrp_path, gid)
 
             self.assertEquals(result[0], 'setstat succeeded')
             defer.returnValue(result)

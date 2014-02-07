@@ -9,6 +9,7 @@ from twisted.internet import reactor
 from twisted.internet import defer
 from twisted.python import failure
 from twisted.conch.ssh import filetransfer
+from twisted.internet.error import TimeoutError
 import fnmatch
 import stat
 
@@ -32,7 +33,7 @@ class SSHClient(ReconnectingClientFactory):
 
         # Defaults
         self.connectionTimeout = 10
-        self.timeout = 3  # Timeout for the commands
+        self.commandTimeout = 30  # Timeout for the commands
 
         # Runtime
         # --------------------------------------------------------------
@@ -77,13 +78,8 @@ class SSHClient(ReconnectingClientFactory):
 
     def _startConnectionFailed(self, data):
         '''Catch transport errors'''
-        pass
+        return data
         #log.debug('In _startConnectionFailed')
-
-    def _ebdClient(self, data):
-        '''Catch dclient errorbacks.  We could log these
-        but the client should just reconnect'''
-        pass
 
     def resetConnection(self, reason=None):
         dClient, self.dClient = self.dClient, defer.Deferred()
@@ -91,23 +87,16 @@ class SSHClient(ReconnectingClientFactory):
         dConnected, self.dConnected = self.dConnected, defer.Deferred()
         dSftpclient, self.dSftpclient = self.dSftpclient, None
 
-        # if reason we had a problem and should err the dClient
-        if not dClient.called and reason:
-            dClient.errback(reason)
-
-        # Send errors to any inflight command
-        # deferreds that havent been called
-        if reason:
-            for d in self.runningDeferreds:
-                if not d.called:
-                    log.debug("resetting %s with Reason:%s" % (d, reason))
-                    d.errback(reason)
-
         self.dTransport.addCallback(self._startConnection,
                                     self.dConnected)
 
         self.dTransport.addErrback(self._startConnectionFailed)
-        self.dClient.addErrback(self._ebdClient)
+
+        if reason:
+            for d in self.runningDeferreds:
+                if not d.called:
+                    log.debug("erroring %s with Reason:%s" % (d, reason))
+                    d.errback(reason)
 
     def clientConnectionLost(self, connector, reason):
         log.debug("Lost connection to %s" % (reason))
@@ -155,26 +144,13 @@ class SSHClient(ReconnectingClientFactory):
     # Begin Helper callbacks
     # ------------------------------------------------------------------
     def _cbRun(self, connection, command, result, timeout=None):
+        if not connection:
+            import pdb;pdb.set_trace()
         log.debug('entered _cbRun')
         channel = CommandChannel(command, result, conn=connection,
                                  timeout=timeout)
         connection.openChannel(channel)
         return connection
-
-    def _cbftpclient(self, connection, client, timeout):
-        log.debug('Creating file transfer client')
-        channel = SFTPChannel(client, connection=connection)
-        connection.openChannel(channel)
-        return connection
-
-    def SftpClientConnect(self, timeout=None):
-        timeout = timeout or self.timeout
-        if not self.dSftpclient:
-            d = defer.Deferred()
-            log.debug('Starting to create dSftpclient')
-            self.dConnected.addCallback(self._cbftpclient, d, timeout)
-            self.dSftpclient = d
-        return d
 
     def _cbreadfile(self, files, l, directory, glob):
         'Recursively scan the directories'
@@ -393,7 +369,7 @@ class SSHClient(ReconnectingClientFactory):
             else:
                 callback.callback(result)
 
-        lf = file(source, 'r')
+        lf = open(source, 'r')
         flags = filetransfer.FXF_WRITE | \
             filetransfer.FXF_CREAT | \
             filetransfer.FXF_TRUNC
@@ -406,117 +382,195 @@ class SSHClient(ReconnectingClientFactory):
     # End Callbacks
     # ------------------------------------------------------------------
     def chgrp(self, path, group, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbchgrp, path, group, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbchgrp, path, group, d)
         return d
 
     def chmod(self, path, perms, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbchmod, path, perms, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbchmod, path, perms, d)
         return d
 
     def chown(self, path, owner, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbchown, path, owner, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbchown, path, owner, d)
         return d
 
     def get(self, source, destination, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbget, source, destination, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbget, source, destination, d)
         return d
 
     def ln(self, source, destination, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbln, source, destination, d)
-        return d
-
-    def ls(self, path, timeout=None):
-        timeout = timeout or self.timeout
-        d = defer.Deferred()
-        self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbls, path, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbln, source, destination, d)
         return d
 
     def mkdir(self, directory, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbmkdir, directory, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbmkdir, directory, d)
         return d
 
     def rename(self, old, new, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbrename, old, new, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbrename, old, new, d)
         return d
 
     def rm(self, path, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbrm, path, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbrm, path, d)
         return d
 
     def rmdir(self, directory, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
-
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbrmdir, directory, d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbrmdir, directory, d)
         return d
 
     def run(self, command, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
         self.dConnected.addCallback(self._cbRun, command, d, timeout)
         return d
 
     def put(self, source, destination, timeout=None):
-        timeout = timeout or self.timeout
+        timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbput, source, destination, d)
+        return d
 
-        self.SftpClientConnect()
-        self.dSftpclient.addCallback(self._cbput, source, destination, d)
+    def ls(self, path, timeout=None):
+        timeout = timeout or self.commandTimeout
+        d = defer.Deferred()
+        self.trackDeferred(d)
+        c = FTPConnection(self.dConnected, d, commandTimeout=timeout)
+        c.addCallback(self._cbls, path, d)
         return d
 
 
+class FTPConnection:
+    connections = []
 
+    def __init__(self, connection, deferred,
+                 connectTimeout=None,
+                 commandTimeout=None,
+                 reactor=reactor):
+        self.connection = connection
+        self.deferred = deferred
+        self.reactor = reactor
 
+        self.channel = None
+        self.ftpClient = None
+        self.connectTimeout = connectTimeout
+        self.commandTimeout = commandTimeout
+        self.timeoutId = None
+        self.open()
 
+    def _cbopen(self, connection):
+        # This will create the ftpClient and open a channel
+        self.channel = SFTPChannel(self.ftpClient, connection=connection,
+                                   timeout=self.connectTimeout)
+        connection.openChannel(self.channel)
+        return connection
 
+    def open(self):
+        self.ftpClient = defer.Deferred()
+        log.debug('Opening ftp channel/client')
 
+        # Make sure we close the connection/deferreds on success or failure.
+        self.deferred.addBoth(self._cbclose)
 
+        # Cleanup if the connection fails
+        self.connection.addErrback(self._ebclose)
 
+        # Initiate the connection
+        self.connection.addCallback(self._cbopen)
 
+    def close(self):
+        log.debug('Closing ftp channel')
+        channel, self.channel = self.channel, None
+        ftpClient, self.ftpClient = self.ftpClient, None
+
+        if channel:
+            channel.loseConnection()
+
+        timeoutId, self.timeoutId = self.timeoutId, None
+
+        if timeoutId and not timeoutId.called:
+            timeoutId.cancel()
+
+    def _cbclose(self, data):
+        log.debug('Closing channel and client from _cbclose')
+        self.close()
+        return data
+
+    def _ebclose(self, data):
+        log.debug('Closing channel and client from _ebclose')
+        self.close()
+        return data
+
+    def _cbStopTimer(self, results):
+        log.debug('cancelling timer, saw: %s' % (results, ) )
+        timeoutId, self.timeoutId = self.timeoutId, None
+        if timeoutId:
+            timeoutId.cancel()
+        return results
+
+    def _timeoutCalled(self):
+        log.debug('timeout triggered')
+        #import pdb;pdb.set_trace()
+        if not self.deferred.called:
+            self.deferred.errback(TimeoutError())
+        self.timeoutId = None
+        self.close()
+
+    def _startTimer(self):
+        if self.commandTimeout:
+            log.debug('FTPConnection: starting timer with %s timeout' % self.commandTimeout)
+            self.deferred.addCallback(self._cbStopTimer)
+            self.timeoutId = self.reactor.callLater(self.commandTimeout, self._timeoutCalled)
+
+    # pass-thru deferred emulation
+    def addCallback(self, callback, *args, **kwargs):
+        self._startTimer()
+        self.ftpClient.addCallback(callback, *args, **kwargs)
+        return self.ftpClient
+
+    def addErrback(self, callback, *args, **kwargs):
+        self._startTimer()
+        self.ftpClient.addErrback(callback, *args, **kwargs)
+        return self.ftpClient
+
+    def addBoth(self, callback, *args, **kwargs):
+        self._startTimer()
+        self.ftpClient.addBoth(callback, *args, **kwargs)
+        return self.ftpClient
