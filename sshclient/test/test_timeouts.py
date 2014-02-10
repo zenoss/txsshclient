@@ -78,6 +78,7 @@ class IPV4FTPTimeoutTestCase(TestCase):
         finally:
             shutil.rmtree(sandbox)
 
+
 class IPV4CommandTimeoutTestCase(TestCase):
     def setUp(self):
         self.hostname = '127.0.0.1'

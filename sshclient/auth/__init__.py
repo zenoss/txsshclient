@@ -1,8 +1,11 @@
 from twisted.internet import defer
 from twisted.conch.ssh import userauth
-import os
+from twisted.conch.ssh.keys import Key
+from twisted.conch.ssh import keys
 import pwd
+import os
 from pprint import pformat
+from twisted.cred.error import UnauthorizedLogin
 
 import logging
 log = logging.getLogger('auth')
@@ -18,6 +21,10 @@ class SshNoPasswordError(Exception):
     pass
 
 
+class NoPasswordException(Exception):
+    pass
+
+
 class PasswordAuth(userauth.SSHUserAuthClient):
     """Auth Class that gets the password from the factory"""
     #SSHUserAuthClient(self, user, options, *args)
@@ -28,7 +35,11 @@ class PasswordAuth(userauth.SSHUserAuthClient):
         self._sent_password = False
         self._sent_pk = False
         self._sent_kbint = False
+        self._auth_failures = []
+        self._auth_succeeded = False  # track auth success.
         self.factory = factory
+
+        self._usedIdentities = []
 
         user = str(self.user)
         if user == '':
@@ -129,3 +140,76 @@ class PasswordAuth(userauth.SSHUserAuthClient):
                 log.warning('No known prompts: %s', pformat(prompts))
             d = defer.succeed(responses)
         return d
+
+    def auth_keyboard_interactive(self, *args, **kwargs):
+        # Don't authenticate multiple times with same credentials
+        if self._sent_kbint:
+            return False
+        # Only return that we support keyboard-interactive authentication if a
+        # password is specified.
+        try:
+            self._getPassword()
+            self._sent_kbint = True
+            return userauth.SSHUserAuthClient.auth_keyboard_interactive(self, *args, **kwargs)
+        except NoPasswordException:
+            return False
+
+    def ssh_USERAUTH_FAILURE(self, *args, **kwargs):
+        if self.lastAuth != 'none' and self.lastAuth \
+                not in self._auth_failures:
+                    self._auth_failures.append(self.lastAuth)
+        return userauth.SSHUserAuthClient.ssh_USERAUTH_FAILURE(self,
+                                                               *args,
+                                                               **kwargs)
+
+    def ssh_USERAUTH_SUCCESS(self, *args, **kwargs):
+        self._auth_succeeded = True
+        return userauth.SSHUserAuthClient.ssh_USERAUTH_SUCCESS(self, *args, **kwargs)
+
+    def getPublicKey(self):
+        if 'identities' in self.options:
+            identities = [x for x in self.options['identities']
+                          if x not in self._usedIdentities]
+        else:
+            identities = []
+        if not identities:
+            return None
+        identity = identities[0]
+        self._usedIdentities.append(identity)
+        identity = os.path.expanduser(identity) + '.pub'
+        if not os.path.exists(identity):
+            return
+        try:
+            log.debug('Reading pubkey %s' % identity)
+            data = ''.join(open(identity).readlines()).strip()
+            key = Key.fromString(data)
+
+            return key.blob()
+        except IOError, e:
+            log.debug('Unable to read pubkey because %s' % str(e))
+            self.getPublicKey()
+        except:
+            return self.getPublicKey()
+
+    def getPrivateKey(self):
+        privkey = os.path.expanduser(self._usedIdentities[-1])
+        if 'password' in self.options:
+            password = self.options['password']
+        else:
+            password = ''
+
+        if os.path.exists(privkey):
+            try:
+                data = ''.join(open(privkey).readlines()).strip()
+                key = Key.fromString(data, passphrase=password)
+                log.debug('Loaded privkey %s' % privkey)
+                return defer.succeed(key.keyObject)
+            except keys.BadKeyError, e:
+                log.debug('Failed to load and/or decrypt %s' % privkey)
+
+    #def serviceStopped(self, *args, **kwargs):
+    #    userauth.SSHUserAuthClient.serviceStopped(self, *args, **kwargs)
+    #    if not self._auth_succeeded:
+    #        import pdb;pdb.set_trace()
+            #raise UnauthorizedLogin
+

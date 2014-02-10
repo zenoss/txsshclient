@@ -14,7 +14,13 @@ from twisted.cred.credentials import IUsernamePassword
 from twisted.cred.checkers import ICredentialsChecker
 from twisted.conch.ssh.factory import SSHFactory
 from twisted.cred.portal import Portal
+from twisted.cred import checkers
+from twisted.cred import credentials
 from twisted.conch.ssh.keys import Key
+from twisted.conch.ssh import keys
+import base64
+from twisted.python import failure
+from twisted.conch import error
 
 #from twisted.internet.error import ConnectError
 from twisted.conch.unix import UnixConchUser
@@ -66,6 +72,36 @@ class DummyChecker:
         return True
 
 
+class PublicKeyCredentialsChecker(object):
+    implements(checkers.ICredentialsChecker)
+    credentialInterfaces = (credentials.ISSHPrivateKey,)
+
+    def __init__(self, authorizedKeys):
+        self.authorizedKeys = authorizedKeys
+
+    def requestAvatarId(self, credentials):
+        userKeyString = self.authorizedKeys.get(credentials.username)
+        if not userKeyString:
+            return failure.Failure(error.ConchError("No such user"))
+
+        # Remove the 'ssh-rsa' type before decoding.
+        if credentials.blob != base64.decodestring(
+                userKeyString.split(" ")[1]):
+            raise failure.failure(
+                error.ConchError("I don't recognize that key"))
+
+        if not credentials.signature:
+            return failure.Failure(error.ValidPublicKey())
+
+        userKey = keys.Key.fromString(data=userKeyString)
+        if userKey.verify(credentials.signature, credentials.sigData):
+            return credentials.username
+        else:
+            print "signature check failed"
+            return failure.Failure(
+                error.ConchError("Incorrect signature"))
+
+
 class NoRootUnixConchUser(UnixConchUser):
     '''We are not forking to run the command as the user who authenticated.
        This will allow us to run this unit test as the user running the test.
@@ -102,7 +138,13 @@ class NoRootUnixSSHRealm:
 class SSHServer(SSHFactory):
     'Simulate an OpenSSH server.'
     portal = Portal(NoRootUnixSSHRealm())
-    portal.registerChecker(DummyChecker())
+    #portal.registerChecker(DummyChecker())
+
+    authorizedKeys = {
+    "eedgar": "ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEApabUX5er6J5dDtalEVaBHvZ8hMAZCeJ7gxnN/9uF6b7aVahPDkRjYxkyLxhQAKdsfqfsNxiFF6C0MulIzpE/xO2CKV2nZd/GJKt6xvEbs3qJcsNPUWujVpsrG/fkBa99IJ3kGW5kmSBwkWnUY21XGa8E/V4rs3C9m/KYMQ3hHuCD2HHaYF/s6UA5AfpoVA8UCF4jCCaiqf+moVuE4xjijUEXPU7apkTDXHsMBX/S8hnkoUUM1aJ4ehboC9aK2HSo6wT1RT4o/6H4tvp5fo2hBUUJGuj92QW386Nx49vr8T/hH4vSdqvWmT4rhydsGdT3Q+VyTyG2W1x226GDdvrT3Q=="
+    }
+
+    portal.registerChecker(PublicKeyCredentialsChecker(authorizedKeys))
 
     def __init__(self):
         #pubkey = '.'.join((privkey, 'pub'))

@@ -95,11 +95,11 @@ class CommandChannel(channel.SSHChannel):
         self.timeoutCancel()
 
 
-
 class SFTPChannel(channel.SSHChannel):
     name = 'session'
 
-    def __init__(self, clientHandle, connection, timeout=None, reactor=reactor, *args, **kwargs):
+    def __init__(self, clientHandle, connection,
+                 timeout=None, reactor=reactor, *args, **kwargs):
         channel.SSHChannel.__init__(self, *args, **kwargs)
         self.clientHandle = clientHandle
         self.conn = connection

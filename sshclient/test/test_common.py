@@ -1,26 +1,30 @@
 from twisted.internet import defer
-from twisted.internet import reactor
 from zope.interface import implements
 from twisted.cred.credentials import IUsernamePassword
 from twisted.cred.checkers import ICredentialsChecker
 from twisted.conch.ssh.factory import SSHFactory
 from twisted.cred.portal import Portal
 #from twisted.conch.unix import UnixSSHRealm
-from twisted.trial.unittest import TestCase
+
 from twisted.conch.ssh.keys import Key
+from twisted.cred import checkers
+from twisted.cred import credentials
+from twisted.conch.ssh import keys
+import base64
+from twisted.python import failure
+from twisted.conch import error
 
 #from twisted.internet.error import ConnectError
+from twisted.conch.avatar import ConchUser
 from twisted.conch.unix import UnixConchUser
 from twisted.conch.ssh import transport
-from twisted.internet import protocol
+from twisted.conch.ssh import session, forwarding, filetransfer
 
-from sshclient import SSHClient
 from sshclient import SSHTransport
 
 from zope import interface
 from twisted.cred import portal
-import getpass
-
+import grp
 import logging
 log = logging.getLogger('test_common')
 
@@ -68,10 +72,62 @@ class DummyChecker:
         return True
 
 
+class PublicKeyCredentialsChecker(object):
+    implements(checkers.ICredentialsChecker)
+    credentialInterfaces = (credentials.ISSHPrivateKey,)
+
+    def __init__(self, authorizedKeys):
+        self.authorizedKeys = authorizedKeys
+
+    def requestAvatarId(self, credentials):
+        userKeyString = self.authorizedKeys.get(credentials.username)
+        if not userKeyString:
+            return failure.Failure(error.ConchError("No such user"))
+
+        # Remove the 'ssh-rsa' type before decoding.
+        if credentials.blob != base64.decodestring(
+                userKeyString.split(" ")[1]):
+            raise failure.failure(
+                error.ConchError("I don't recognize that key"))
+
+        if not credentials.signature:
+            return failure.Failure(error.ValidPublicKey())
+
+        userKey = keys.Key.fromString(data=userKeyString)
+        if userKey.verify(credentials.signature, credentials.sigData):
+            return credentials.username
+        else:
+            log.debug("signature check failed")
+            return failure.Failure(
+                error.ConchError("Incorrect signature"))
+
+
 class NoRootUnixConchUser(UnixConchUser):
     '''We are not forking to run the command as the user who authenticated.
        This will allow us to run this unit test as the user running the test.
        This is not secure and should not be done in a production ssh server'''
+
+    def __init__(self, username):
+        ConchUser.__init__(self)
+        self.username = username
+        #self.pwdData = pwd.getpwnam(self.username)
+
+        self.pwdData = [0, 0, 0, 0, 0, 0, 0]
+        self.pwdData[3] = 20
+        self.pwdData[5] = '/tmp'
+        self.pwdData[6] = '/bin/bash'
+        l = [self.pwdData[3]]
+        for groupname, password, gid, userlist in grp.getgrall():
+            if username in userlist:
+                l.append(gid)
+        self.otherGroups = l
+        self.listeners = {}  # dict mapping (interface, port) -> listener
+        self.channelLookup.update(
+            {"session": session.SSHSession,
+             "direct-tcpip": forwarding.openConnectForwardingClient})
+
+        self.subsystemLookup.update(
+            {"sftp": filetransfer.FileTransferServer})
 
     def getUserGroupId(self):
         return (None, None)
@@ -84,8 +140,8 @@ class NoRootUnixConchUser(UnixConchUser):
         try:
             for i in f:
                 func = i[0]
-                args = len(i)>1 and i[1] or ()
-                kw = len(i)>2 and i[2] or {}
+                args = len(i) > 1 and i[1] or ()
+                kw = len(i) > 2 and i[2] or {}
                 r = func(*args, **kw)
         finally:
             pass
@@ -113,13 +169,12 @@ class SlowNoRootUnixConchUser(NoRootUnixConchUser):
         try:
             for i in f:
                 func = i[0]
-                args = len(i)>1 and i[1] or ()
-                kw = len(i)>2 and i[2] or {}
+                args = len(i) > 1 and i[1] or ()
+                kw = len(i) > 2 and i[2] or {}
                 r = func(*args, **kw)
         finally:
             pass
         return r
-
 
 
 class NoRootUnixSSHRealm:
@@ -129,6 +184,7 @@ class NoRootUnixSSHRealm:
     def requestAvatar(self, username, mind, *interfaces):
         user = NoRootUnixConchUser(username)
         return interfaces[0], user, user.logout
+
 
 class SlowNoRootUnixSSHRealm:
     '''Create a SSH Realm that will not need to fork as root and be slow'''

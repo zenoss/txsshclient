@@ -230,14 +230,13 @@ class IPV4FunctionalBaseTestCase(TestCase):
 
             import os
             import pwd
-            uid = pwd.getpwuid( os.getuid() ).pw_uid
+            uid = pwd.getpwuid(os.getuid()).pw_uid
             result = yield self.client.chown(chown_path, uid)
 
             self.assertEquals(result[0], 'setstat succeeded')
             defer.returnValue(result)
         finally:
             shutil.rmtree(sandbox)
-
 
     @defer.inlineCallbacks
     def test_chgrp(self):
@@ -249,7 +248,7 @@ class IPV4FunctionalBaseTestCase(TestCase):
 
             import os
             import pwd
-            gid = pwd.getpwuid( os.getuid() ).pw_gid
+            gid = pwd.getpwuid(os.getuid()).pw_gid
             result = yield self.client.chgrp(chgrp_path, gid)
 
             self.assertEquals(result[0], 'setstat succeeded')

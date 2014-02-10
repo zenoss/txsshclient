@@ -25,16 +25,16 @@ class SSHClient(ReconnectingClientFactory):
 
     # the underlying transport/protocol
     protocol = SSHTransport
-    maxDelay = 2
 
     def __init__(self, options, reactor=reactor):
         self.options = options
         self.reactor = reactor
 
         # Defaults
-        self.connectionTimeout = 10
-        self.commandTimeout = 30  # Timeout for the commands
-
+        self.connectionTimeout = 10  # Connection timeout in seconds
+        self.commandTimeout = None  # Timeout for the commands in seconds
+        self.maxDelay = 10  # Maximum delay in seconds before retrying to
+                            # connect.
         # Runtime
         # --------------------------------------------------------------
         self.connector = None
@@ -114,9 +114,13 @@ class SSHClient(ReconnectingClientFactory):
 
     def connect(self):
         t = self.connectionTimeout
-        self.connector = self.reactor.connectTCP(self.options['hostname'],
-                                                 self.options['port'], self,
+        host = self.options['hostname']
+        port = self.options['port']
+        log.debug('Connecting to SSH server at %s:%s' % (host, port))
+        self.connector = self.reactor.connectTCP(host, port,
+                                                 self,
                                                  timeout=t)
+        return self.connector
 
     def disconnect(self):
         self.stopTrying()
@@ -144,8 +148,6 @@ class SSHClient(ReconnectingClientFactory):
     # Begin Helper callbacks
     # ------------------------------------------------------------------
     def _cbRun(self, connection, command, result, timeout=None):
-        if not connection:
-            import pdb;pdb.set_trace()
         log.debug('entered _cbRun')
         channel = CommandChannel(command, result, conn=connection,
                                  timeout=timeout)
@@ -539,7 +541,7 @@ class FTPConnection:
         return data
 
     def _cbStopTimer(self, results):
-        log.debug('cancelling timer, saw: %s' % (results, ) )
+        log.debug('cancelling timer, saw: %s' % (results,))
         timeoutId, self.timeoutId = self.timeoutId, None
         if timeoutId:
             timeoutId.cancel()
@@ -547,7 +549,6 @@ class FTPConnection:
 
     def _timeoutCalled(self):
         log.debug('timeout triggered')
-        #import pdb;pdb.set_trace()
         if not self.deferred.called:
             self.deferred.errback(TimeoutError())
         self.timeoutId = None
@@ -555,9 +556,11 @@ class FTPConnection:
 
     def _startTimer(self):
         if self.commandTimeout:
-            log.debug('FTPConnection: starting timer with %s timeout' % self.commandTimeout)
+            log.debug('FTPConnection: starting timer with %s timeout' %
+                      self.commandTimeout)
             self.deferred.addCallback(self._cbStopTimer)
-            self.timeoutId = self.reactor.callLater(self.commandTimeout, self._timeoutCalled)
+            self.timeoutId = self.reactor.callLater(self.commandTimeout,
+                                                    self._timeoutCalled)
 
     # pass-thru deferred emulation
     def addCallback(self, callback, *args, **kwargs):

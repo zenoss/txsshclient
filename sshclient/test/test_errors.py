@@ -130,7 +130,6 @@ class IPV4FunctionalTestCase(TestCase):
         def test_failure(data):
             return self.assertFailure(data, ConnectionLost)
 
-
         def test_success(data):
             self.assertEqual(data, (0, 'hi\n', ''))
             return data
