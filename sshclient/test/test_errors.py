@@ -6,8 +6,8 @@ import getpass
 import logging
 log = logging.getLogger('test_exec')
 
-from twisted.internet.error import ConnectionLost, ConnectError
-
+from twisted.internet.error import ConnectionDone, ConnectError, ConnectionLost
+import os
 import shutil
 import tempfile
 import logging
@@ -17,6 +17,10 @@ import logging
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
 log = logging.getLogger('test_errors')
+
+def touch(path):
+    with open(path, 'a'):
+        os.utime(path, None)
 
 
 class IPV4FunctionalNoServerTestCase(TestCase):
@@ -153,7 +157,147 @@ class IPV4FunctionalTestCase(TestCase):
         d.addBoth(test_success)
         return d
 
+class IPV4FunctionalNoReconnectionTestCase(TestCase):
+    def setUp(self):
+        self.timeout = 10
+        self.hostname = '127.0.0.1'
+        self.user = getpass.getuser()
+        self.password = 'dummyTestPassword'
+        self.server = SSHServer()
+        self.server.protocol = ServerProtocol
 
+        self.port = reactor.listenTCP(0, self.server, interface=self.hostname)
+        self.portnum = self.port.getHost().port
+
+        options = {'hostname': self.hostname,
+                   'port': self.portnum,
+                   'user': self.user,
+                   'password': self.password,
+                   'buffersize': 32768}
+
+        self.client = SSHClient(options)
+        self.client.maxRetries = 0
+        #self.client.maxDelay = 0
+        self.client.protocol = ClientProtocol
+        self.client.connect()
+
+    def tearDown(self):
+        # Shut down the server and client
+        log.debug('tearing down')
+        port, self.port = self.port, None
+        client, self.client = self.client, None
+        server, self.server = self.server, None
+
+        # A Deferred for the server listening port
+        d = port.stopListening()
+
+        # Tell the client to disconnect and not retry.
+        client.disconnect()
+
+        # Wait for the server to stop.
+        return defer.gatherResults([d])
+
+    def test_run_command(self):
+
+        def server_stop_listening(data):
+            sld = self.port.stopListening()
+            return sld
+
+        def server_drop_connections(data):
+            port, self.port = self.port, None
+            server, self.server = self.server, None
+            server.protocol.transport.loseConnection()
+            log.debug('Dropping server connection')
+            return self.client.onConnectionLost
+
+        def run_command(data):
+
+            log.debug('running command hi2')
+            results = self.client.run('echo hi2')
+            return results
+
+        def test_failure_done(deferred):
+            log.debug('Failure %s ' % deferred)
+            return self.assertEqual(deferred.type, ConnectionDone)
+
+        def test_success(data):
+            log.debug('Success %s' % (data,))
+            return self.assertEqual(data, (0, 'hi\n', ''))
+
+
+        def bring_up_server(data):
+            self.server = SSHServer()
+            self.server.protocol = ServerProtocol
+            self.port = reactor.listenTCP(self.portnum,
+                                          self.server,
+                                          interface=self.hostname)
+            log.debug('server started')
+            return data.factory.dConnected
+
+
+        d = self.client.run('echo hi')
+        d.addBoth(test_success)
+        d.addCallback(server_stop_listening)
+        d.addCallback(server_drop_connections)
+        d.addCallback(bring_up_server)
+        d.addCallback(run_command)
+        d.addErrback(test_failure_done)
+
+        return d
+
+    def test_lsdir(self):
+        test_file = 'test_ls_dir'
+        sandbox = tempfile.mkdtemp()
+        testfile = '/'.join([sandbox, test_file])
+        touch(testfile)
+        d = self.client.ls(sandbox)
+
+        def cleanup_sandbox(data):
+            log.debug('Cleaning up sandbox')
+            shutil.rmtree(sandbox)
+
+        def test_success(data):
+            return self.assertEqual(data[0][0], test_file)
+
+        def server_stop_listening(data):
+            sld = self.port.stopListening()
+            return sld
+
+        def server_drop_connections(data):
+            port, self.port = self.port, None
+            server, self.server = self.server, None
+            server.protocol.transport.loseConnection()
+            log.debug('Dropping server connection')
+            return self.client.onConnectionLost
+
+        def bring_up_server(data):
+            self.server = SSHServer()
+            self.server.protocol = ServerProtocol
+            self.port = reactor.listenTCP(self.portnum,
+                                          self.server,
+                                          interface=self.hostname)
+            log.debug('server started')
+            return data.factory.dConnected
+
+        def run_lsdir(data):
+
+            log.debug('running command ls again')
+            results = self.client.ls(sandbox)
+            return results
+
+        def test_failure_done(deferred):
+            log.debug('Failure %s ' % deferred)
+            return self.assertEqual(deferred.type, ConnectionDone)
+
+        d.addCallback(test_success)
+        d.addCallback(server_stop_listening)
+        d.addCallback(server_drop_connections)
+        d.addCallback(bring_up_server)
+        d.addCallback(run_lsdir)
+        d.addErrback(test_failure_done)
+        d.addBoth(cleanup_sandbox)
+
+        return d
 
 
 

@@ -151,7 +151,8 @@ class SSHClient(ReconnectingClientFactory):
         log.debug('entered _cbRun')
         channel = CommandChannel(command, result, conn=connection,
                                  timeout=timeout)
-        connection.openChannel(channel)
+        if connection:
+            connection.openChannel(channel)
         return connection
 
     def _cbreadfile(self, files, l, directory, glob):
@@ -501,7 +502,8 @@ class FTPConnection:
         # This will create the ftpClient and open a channel
         self.channel = SFTPChannel(self.ftpClient, connection=connection,
                                    timeout=self.connectTimeout)
-        connection.openChannel(self.channel)
+        if connection:
+            connection.openChannel(self.channel)
         return connection
 
     def open(self):
