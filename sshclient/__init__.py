@@ -123,6 +123,7 @@ class SSHClient(ReconnectingClientFactory):
                                                          reason)
 
     def connect(self):
+        'Start connecting to a remote ssh server.'
         t = self.connectionTimeout
         log.info('Connecting to SSH server at %s:%s' % (self.host,
                                                         self.port))
@@ -135,6 +136,7 @@ class SSHClient(ReconnectingClientFactory):
         return self.connector
 
     def disconnect(self):
+        'Disconnect from a remote ssh server.'
         log.info('Disconnecting from SSH server at %s:%s' % (self.host,
                                                              self.port))
         self.stopTrying()
