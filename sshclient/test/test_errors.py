@@ -18,6 +18,7 @@ import logging
 #observer.start()
 log = logging.getLogger('test_errors')
 
+
 def touch(path):
     with open(path, 'a'):
         os.utime(path, None)
@@ -77,7 +78,7 @@ class IPV4FunctionalNoServerTestCase(TestCase):
         return self.assertFailure(d, ConnectError)
 
 
-class IPV4FunctionalTestCase(TestCase):
+class IPV4FunctionalReconnectionTestCase(TestCase):
     def setUp(self):
         self.hostname = '127.0.0.1'
         self.user = getpass.getuser()
@@ -157,6 +158,7 @@ class IPV4FunctionalTestCase(TestCase):
         d.addBoth(test_success)
         return d
 
+
 class IPV4FunctionalNoReconnectionTestCase(TestCase):
     def setUp(self):
         self.timeout = 10
@@ -218,12 +220,11 @@ class IPV4FunctionalNoReconnectionTestCase(TestCase):
 
         def test_failure_done(deferred):
             log.debug('Failure %s ' % deferred)
-            return self.assertEqual(deferred.type, ConnectionDone)
+            return self.assertEqual(deferred.type, ConnectionLost)
 
         def test_success(data):
             log.debug('Success %s' % (data,))
             return self.assertEqual(data, (0, 'hi\n', ''))
-
 
         def bring_up_server(data):
             self.server = SSHServer()

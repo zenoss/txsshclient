@@ -37,6 +37,7 @@ class CommandChannel(channel.SSHChannel):
         log.debug('Command Channel initialized')
 
     def openFailed(self, reason):
+        log.debug('CommandChannel: open failed because %s' % reason)
         if isinstance(reason, ConchError):
             res = (reason.data, reason.value)
         else:
@@ -51,7 +52,7 @@ class CommandChannel(channel.SSHChannel):
             self.timeoutId = None
 
     def startTimer(self):
-        if self.timeout:
+        if self.timeout and not self.timeoutId:
             log.debug('starting timer with %s timeout' % self.timeout)
             self.timeoutId = self.reactor.callLater(self.timeout,
                                                     self._timeoutCalled)
@@ -122,6 +123,7 @@ class SFTPChannel(channel.SSHChannel):
         log.debug('Created SFTP Client')
 
     def openFailed(self, reason):
+        log.debug('SFTPChannel: open failed because %s' % reason)
         if isinstance(reason, ConchError):
             res = (reason.data, reason.value)
         else:

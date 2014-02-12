@@ -5,7 +5,6 @@ from twisted.conch.ssh import keys
 import pwd
 import os
 from pprint import pformat
-from twisted.cred.error import UnauthorizedLogin
 
 import logging
 log = logging.getLogger('auth')
@@ -150,7 +149,9 @@ class PasswordAuth(userauth.SSHUserAuthClient):
         try:
             self._getPassword()
             self._sent_kbint = True
-            return userauth.SSHUserAuthClient.auth_keyboard_interactive(self, *args, **kwargs)
+            return userauth.SSHUserAuthClient.auth_keyboard_interactive(self,
+                                                                        *args,
+                                                                        **kwargs)
         except NoPasswordException:
             return False
 
@@ -164,7 +165,9 @@ class PasswordAuth(userauth.SSHUserAuthClient):
 
     def ssh_USERAUTH_SUCCESS(self, *args, **kwargs):
         self._auth_succeeded = True
-        return userauth.SSHUserAuthClient.ssh_USERAUTH_SUCCESS(self, *args, **kwargs)
+        return userauth.SSHUserAuthClient.ssh_USERAUTH_SUCCESS(self,
+                                                               *args,
+                                                               **kwargs)
 
     def getPublicKey(self):
         if 'identities' in self.options:
@@ -185,7 +188,7 @@ class PasswordAuth(userauth.SSHUserAuthClient):
             key = Key.fromString(data)
 
             return key.blob()
-        except IOError, e:
+        except IOError as e:
             log.debug('Unable to read pubkey because %s' % str(e))
             self.getPublicKey()
         except:
@@ -204,7 +207,7 @@ class PasswordAuth(userauth.SSHUserAuthClient):
                 key = Key.fromString(data, passphrase=password)
                 log.debug('Loaded privkey %s' % privkey)
                 return defer.succeed(key.keyObject)
-            except keys.BadKeyError, e:
+            except keys.BadKeyError:
                 log.debug('Failed to load and/or decrypt %s' % privkey)
 
     #def serviceStopped(self, *args, **kwargs):

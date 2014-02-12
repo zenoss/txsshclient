@@ -29,11 +29,21 @@ class SSHClient(ReconnectingClientFactory):
     def __init__(self, options, reactor=reactor):
         self.options = options
         self.reactor = reactor
+        self.host = self.options['hostname']
+        self.port = self.options['port']
+
+        # Example options
+        #options = {'hostname': '127.0.0.1',
+        #           'port': 22,
+        #           'user': 'user',
+        #           'password': 'password',
+        #           'identities': ['~/.ssh/id_rsa', '~/.ssh/id_dsa']
+        #           'buffersize': 32768}
 
         # Defaults
-        self.connectionTimeout = 10  # Connection timeout in seconds
+        self.connectionTimeout = 100  # Connection timeout in seconds
         self.commandTimeout = None  # Timeout for the commands in seconds
-        self.maxDelay = 10  # Maximum delay in seconds before retrying to
+        self.maxDelay = 200  # Maximum delay in seconds before retrying to
                             # connect.
         # Runtime
         # --------------------------------------------------------------
@@ -72,7 +82,7 @@ class SSHClient(ReconnectingClientFactory):
                                                self.connection,
                                                self))
 
-        log.debug('creating dConnected deferred')
+        log.debug('Creating Connection that will fire dConnected deferred')
         self.connection = Connection(self, self.dConnected)
         self.dClient.addCallback(_requestService)
 
@@ -93,9 +103,9 @@ class SSHClient(ReconnectingClientFactory):
         self.dTransport.addErrback(self._startConnectionFailed)
 
         if reason:
+            log.debug('Closing active deferreds with reason %s' % reason)
             for d in self.runningDeferreds:
                 if not d.called:
-                    log.debug("erroring %s with Reason:%s" % (d, reason))
                     d.errback(reason)
 
     def clientConnectionLost(self, connector, reason):
@@ -114,15 +124,19 @@ class SSHClient(ReconnectingClientFactory):
 
     def connect(self):
         t = self.connectionTimeout
-        host = self.options['hostname']
-        port = self.options['port']
-        log.debug('Connecting to SSH server at %s:%s' % (host, port))
-        self.connector = self.reactor.connectTCP(host, port,
+        log.info('Connecting to SSH server at %s:%s' % (self.host,
+                                                        self.port))
+
+        # host, port, factory, timeout
+        self.connector = self.reactor.connectTCP(self.host,
+                                                 self.port,
                                                  self,
                                                  timeout=t)
         return self.connector
 
     def disconnect(self):
+        log.info('Disconnecting from SSH server at %s:%s' % (self.host,
+                                                             self.port))
         self.stopTrying()
         connector, self.connector = self.connector, None
         if connector:
@@ -148,7 +162,7 @@ class SSHClient(ReconnectingClientFactory):
     # Begin Helper callbacks
     # ------------------------------------------------------------------
     def _cbRun(self, connection, command, result, timeout=None):
-        log.debug('entered _cbRun')
+        log.debug('_cbRun: Creating Command Channel')
         channel = CommandChannel(command, result, conn=connection,
                                  timeout=timeout)
         if connection:
@@ -183,22 +197,25 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _cbdone(self, result, callback):
+        'Callback to store the results'
         if isinstance(result, failure.Failure):
             callback.errback(result)
         else:
             callback.callback(result)
 
     def _cbls(self, client, path, result):
-        log.debug('calling _remoteglob')
+        log.debug('_cbls: Reading files from remote')
         d = self._remoteglob(client, path)
         d.addBoth(self._cbdone, result)
         return client
 
     def _cbln(self, client, source, destination, result):
+        log.debug('_cbln: Making link')
         client.makeLink(source, destination).addBoth(self._cbdone, result)
         return client
 
     def _cbchown(self, client, path, owner, result):
+        log.debug('_cbchown: Setting %s ownership to %s' % (path, owner))
         owner = int(owner)
         d = client.getAttrs(path)
         d.addCallback(self._cbsetusrgrp, client, path, owner=owner)
@@ -206,18 +223,19 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _cbgetopenfile(self, remote, local):
+        'get remote file'
         d = remote.getAttrs()
         d.addCallback(self._cbGetFileSize, remote, local)
         return d
 
     def _cbgetdone(self, d, remote, local):
-        log.debug('entering cbgetdone')
         'Close the remote and local file handles'
         local.close()
         remote.close()
         return
 
     def _cbGetFileSize(self, attrs, remote, local):
+        'get remote filesize'
         if not stat.S_ISREG(attrs['permissions']):
             remote.close()
             local.close()
@@ -231,6 +249,7 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _getNextChunk(self, chunks):
+        'chunk index'
         end = 0
         for chunk in chunks:
             try:
@@ -251,20 +270,19 @@ class SSHClient(ReconnectingClientFactory):
 
     def _cbgetread(self, data, remote, local, chunks, start,
                    bufSize, remoteSize):
+        'read chunks of bufSize from remote file'
         if data and isinstance(data, failure.Failure):
-            log.debug('get read err: %s' % data)
             reason = data
             reason.trap(EOFError)
             i = chunks.index((start, start + bufSize))
             del chunks[i]
             chunks.insert(i, (start, 'eof'))
         elif data:
-            log.debug('get read data: %i' % len(data))
             local.seek(start)
             local.write(data)
             if len(data) != bufSize:
-                log.debug('got less than we asked for: %i < %i' %
-                         (len(data), bufSize))
+                log.debug('_cbgetread: got less than we asked for: %i < %i' %
+                          (len(data), bufSize))
                 i = chunks.index((start, start + bufSize))
                 del chunks[i]
                 chunks.insert(i, (start, start + len(data)))
@@ -274,7 +292,7 @@ class SSHClient(ReconnectingClientFactory):
             return
         else:
             start, length = chunk
-        log.debug('asking for %i -> %i' % (start, start+length))
+        log.debug('_cbgetread: asking for %i -> %i' % (start, start+length))
         d = remote.readChunk(start, length)
         d.addBoth(self._cbgetread, remote, local, chunks, start,
                   length, remote.size)
@@ -286,6 +304,8 @@ class SSHClient(ReconnectingClientFactory):
         return f
 
     def _cbget(self, client, source, destination, result):
+        log.debug('_cbget: Copying files from remote')
+        log.debug('_cbget: remote: %s, local: %s' % (source, destination))
         lf = open(destination, 'w')
         lf.seek(0)
         flags = filetransfer.FXF_READ
@@ -296,14 +316,14 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _cbputfile(self, remote, local):
-        log.debug('entering cbputfile')
+        'recursively write to a remote file'
         chunks = []
         d = self._cbputwrite(None, remote, local, chunks)
         d.addCallback(self._cbputdone, remote, local)
         return d
 
     def _cbputwrite(self, ignored, remote, local, chunks):
-
+        'write a chunk to the remote file'
         chunk = self._getNextChunk(chunks)
         log.debug('entering cbputwrite')
         log.debug(chunk)
@@ -318,7 +338,6 @@ class SSHClient(ReconnectingClientFactory):
             return
 
     def _cbputdone(self, d, remote, local):
-        log.debug('entering cbputdone')
         'Close the remote and local file handles'
         local.close()
         remote.close()
@@ -332,6 +351,7 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _cbchgrp(self, client, path, group, result):
+        log.debug('_cbchgrp:  path: %s, group: %s' % (path, group))
         group = int(group)
         d = client.getAttrs(path)
         d.addCallback(self._cbsetusrgrp, client, path, group=group)
@@ -339,38 +359,39 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def _cbchmod(self, client, path, perms, result):
-        log.debug('in cbchmod')
+        log.debug('_cbchmod:  path: %s, perms: %s' % (path, perms))
         perms = int(perms, 8)
         d = client.setAttrs(path, {'permissions': perms})
         d.addBoth(self._cbdone, result)
         return d
 
     def _cbmkdir(self, client, directory, result):
+        log.debug('_cbmkdir: Making remote dir %s' % directory)
         d = client.makeDirectory(directory, {})
         d.addBoth(self._cbdone, result)
         return d
 
     def _cbrename(self, client, old, new, result):
+        log.debug('_cbrename: Moving remote dir %s to %s' % (old, new))
         d = client.renameFile(old, new)
         d.addBoth(self._cbdone, result)
         return d
 
     def _cbrm(self, client, path, result):
+        log.debug('_cbrm: Removing remote path %s' % path)
         d = client.removeFile(path)
         d.addBoth(self._cbdone, result)
         return d
 
     def _cbrmdir(self, client, directory, result):
+        log.debug('_cbrmdir: Removing remote dir %s' % directory)
         d = client.removeDirectory(directory)
         d.addBoth(self._cbdone, result)
         return d
 
     def _cbput(self, client, source, destination, result):
-        def done(result, callback):
-            if isinstance(result, failure.Failure):
-                callback.errback(result)
-            else:
-                callback.callback(result)
+        log.debug('_cbput: Copying files to remote')
+        log.debug('_cbput: remote: %s, local: %s' % (destination, source))
 
         lf = open(source, 'r')
         flags = filetransfer.FXF_WRITE | \
@@ -385,6 +406,17 @@ class SSHClient(ReconnectingClientFactory):
     # End Callbacks
     # ------------------------------------------------------------------
     def chgrp(self, path, group, timeout=None):
+        '''change group of a remote file.
+           This command does not validate the group.
+           @param: path: a path to the remote file. (string)
+           @param: group: the new group as a gid. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('chgrp:  path:%s, group: %s  @ %s:%s ' % (path,
+                                                            group,
+                                                            self.host,
+                                                            self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -393,6 +425,17 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def chmod(self, path, perms, timeout=None):
+        '''change the perms of a remote file.
+           This command does not validate the permissions.
+           @param: path: a path to the remote file. (string)
+           @param: permissions: the new permissions. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('chmod:  path:%s, perms: %s  @ %s:%s ' % (path,
+                                                            perms,
+                                                            self.host,
+                                                            self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -401,6 +444,17 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def chown(self, path, owner, timeout=None):
+        '''change ownership of a remote file.
+           This command does not validate the owner.
+           @param: path: a path to the remote file. (string)
+           @param: owner: the new owner as a uid. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('chown:  path:%s, owner: %s  @ %s:%s ' % (path,
+                                                            owner,
+                                                            self.host,
+                                                            self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -409,6 +463,17 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def get(self, source, destination, timeout=None):
+        '''get a remote file.
+           This command does not validate the source or destination.
+           @param: source: a path to a remote file to get. (string)
+           @param: destination: the destination path. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('get: remote %s, local: %s @ %s:%s' % (source,
+                                                         destination,
+                                                         self.host,
+                                                         self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -417,6 +482,18 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def ln(self, source, destination, timeout=None):
+        '''make a remote symbolic link.
+           This command does not validate the source or destination.
+           @param: source: a path to a source for linking. (string)
+           @param: destination: the destination path for the symbolic link.
+                   (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('ln: source: %s, destination: %s @ %s:%s' % (source,
+                                                               destination,
+                                                               self.host,
+                                                               self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -425,6 +502,16 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def mkdir(self, directory, timeout=None):
+        '''make a remote directory.
+           This command does not validate remote directory and this command
+           is not recursive.
+           @param: directory: A path to a remote directory. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('mkdir:  %s  @ %s:%s ' % (directory,
+                                            self.host,
+                                            self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -433,6 +520,17 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def rename(self, old, new, timeout=None):
+        '''rename a remote path.
+           This command does not validate the source or destination.
+           @param: old: original file/directory name. (string)
+           @param: new: destination file/directory name. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('rename: moving %s to %s @ %s:%s ' % (old,
+                                                        new,
+                                                        self.host,
+                                                        self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -441,6 +539,16 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def rm(self, path, timeout=None):
+        '''remove a remote file.
+           This command does not validate that the file exists and will
+           error if you attempt to delete a non-existing file.
+           @param: path: a path to a remote file. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('rm: removing %s @ %s:%s ' % (path,
+                                                self.host,
+                                                self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -449,6 +557,17 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def rmdir(self, directory, timeout=None):
+        '''remove a remote directory.
+           This command does not validate that the directory exists and will
+           error if you attempt to delete a non-existing dir.  This command
+           is also not recursive.
+           @param: directory: a path to a remote directory. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('rmdir: removing %s @ %s:%s ' % (directory,
+                                                   self.host,
+                                                   self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -457,6 +576,12 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def run(self, command, timeout=None):
+        '''run a command on a remote server.
+           @param: command: a command to run. (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('run: @ %s:%s ' % (self.host, self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -464,6 +589,16 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def put(self, source, destination, timeout=None):
+        '''put a local file to remote server destination.
+           @param: source: a local path (string)
+           @param: destination: a remote path (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('put: source:%s destination: %s @ %s:%s ' % (source,
+                                                               destination,
+                                                               self.host,
+                                                               self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -472,6 +607,12 @@ class SSHClient(ReconnectingClientFactory):
         return d
 
     def ls(self, path, timeout=None):
+        '''ls files on a remote server.
+           @param: path: a remote path (string)
+           @param: timeout: An optional timeout. (int/float)
+           returns a deferred.
+        '''
+        log.debug('ls: %s, @ %s:%s ' % (path, self.host, self.port))
         timeout = timeout or self.commandTimeout
         d = defer.Deferred()
         self.trackDeferred(d)
@@ -481,6 +622,7 @@ class SSHClient(ReconnectingClientFactory):
 
 
 class FTPConnection:
+    'Class that manages ftp connections with timeouts'
     connections = []
 
     def __init__(self, connection, deferred,
@@ -533,24 +675,22 @@ class FTPConnection:
             timeoutId.cancel()
 
     def _cbclose(self, data):
-        log.debug('Closing channel and client from _cbclose')
         self.close()
         return data
 
     def _ebclose(self, data):
-        log.debug('Closing channel and client from _ebclose')
         self.close()
         return data
 
     def _cbStopTimer(self, results):
-        log.debug('cancelling timer, saw: %s' % (results,))
+        log.debug('FTPConnection: resetting timer, received results')
         timeoutId, self.timeoutId = self.timeoutId, None
         if timeoutId:
             timeoutId.cancel()
         return results
 
     def _timeoutCalled(self):
-        log.debug('timeout triggered')
+        log.debug('FTPConnection: timer triggered')
         if not self.deferred.called:
             self.deferred.errback(TimeoutError())
         self.timeoutId = None
@@ -558,24 +698,31 @@ class FTPConnection:
 
     def _startTimer(self):
         if self.commandTimeout:
-            log.debug('FTPConnection: starting timer with %s timeout' %
-                      self.commandTimeout)
-            self.deferred.addCallback(self._cbStopTimer)
-            self.timeoutId = self.reactor.callLater(self.commandTimeout,
-                                                    self._timeoutCalled)
+            if not self.timeoutId:
+                log.debug('FTPConnection: starting timer with %s timeout' %
+                          self.commandTimeout)
+                self.deferred.addCallback(self._cbStopTimer)
+                self.timeoutId = self.reactor.callLater(self.commandTimeout,
+                                                        self._timeoutCalled)
 
     # pass-thru deferred emulation
     def addCallback(self, callback, *args, **kwargs):
+        # Start the timer immediately.
+        # Run a command once the ftpClient is ready
         self._startTimer()
         self.ftpClient.addCallback(callback, *args, **kwargs)
         return self.ftpClient
 
     def addErrback(self, callback, *args, **kwargs):
+        # Start the timer immediately.
+        # attach an errBack on the ftpClient deferred
         self._startTimer()
         self.ftpClient.addErrback(callback, *args, **kwargs)
         return self.ftpClient
 
     def addBoth(self, callback, *args, **kwargs):
+        # Start the timer immediately.
+        # attach an errBack and a Callback on the ftpClient deferred
         self._startTimer()
         self.ftpClient.addBoth(callback, *args, **kwargs)
         return self.ftpClient
