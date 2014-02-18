@@ -11,6 +11,13 @@ import logging
 log = logging.getLogger('channel')
 
 
+class Results:
+    def __init__(self, command, output, exitCode):
+        self.command = command
+        self.output = output
+        self.exitCode = exitCode
+
+
 class CommandChannel(channel.SSHChannel):
     name = "session"
 
@@ -30,7 +37,7 @@ class CommandChannel(channel.SSHChannel):
         self.result = result
         self.timeout = timeout
         self.reactor = reactor
-        self.out = ''
+        self.data = ''
         self.err = ''
         self.exit = 1
         self.timeoutId = None
@@ -79,7 +86,7 @@ class CommandChannel(channel.SSHChannel):
         return req
 
     def dataReceived(self, data):
-        self.out = self.out + data
+        self.data = self.data + data
 
     def extReceived(self, dataType, data):
         if dataType == 1:
@@ -90,8 +97,10 @@ class CommandChannel(channel.SSHChannel):
 
         log.debug('Sending results back to the callback')
         if not self.result.called:
-            self.result.callback((self.exit, self.out, self.err))
-
+            #self.result.callback((self.exit, self.data, self.err))
+            self.result.callback(Results(self.command,
+                                         self.data,
+                                         self.exit))
     def eofReceived(self):
         self.timeoutCancel()
 

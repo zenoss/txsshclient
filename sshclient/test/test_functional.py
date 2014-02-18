@@ -66,7 +66,8 @@ class IPV4FunctionalBaseTestCase(TestCase):
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
             return data
 
         d.addCallback(got_hi)
@@ -325,7 +326,8 @@ class IPV6FunctionalBaseTestCase(TestCase):
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
             return data
 
         d.addCallback(got_hi)

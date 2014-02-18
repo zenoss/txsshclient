@@ -136,7 +136,8 @@ class IPV4FunctionalReconnectionTestCase(TestCase):
             return self.assertFailure(data, ConnectionLost)
 
         def test_success(data):
-            self.assertEqual(data, (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
             return data
 
         def start_server(data):
@@ -220,11 +221,12 @@ class IPV4FunctionalNoReconnectionTestCase(TestCase):
 
         def test_failure_done(deferred):
             log.debug('Failure %s ' % deferred)
-            return self.assertEqual(deferred.type, ConnectionLost)
+            return self.assertEqual(deferred.type, ConnectionDone)
 
         def test_success(data):
             log.debug('Success %s' % (data,))
-            return self.assertEqual(data, (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
 
         def bring_up_server(data):
             self.server = SSHServer()

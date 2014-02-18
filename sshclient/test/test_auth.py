@@ -101,7 +101,8 @@ class IPV4FunctionalAuthTestCase(TestCase):
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
             return data
 
         d.addBoth(client_disconnect)
@@ -187,7 +188,8 @@ AN47K9sxuWxUMwlZVP9IbWJwKInoIn72ck/x5+Y5i+NYOOp5JfeepONzXo6Ulw6B
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
             return data
 
         d.addBoth(client_disconnect)
@@ -307,7 +309,8 @@ pwZnlY+/k842IzNH1I6J+Fak7ylb0ldj6SsL0NL4jPveOFBXsr8f
 
         def got_hi(data):
             log.debug('Got Data %s' % (data,))
-            self.assertEquals(data,  (0, 'hi\n', ''))
+            self.assertEqual(data.exitCode, 0)
+            self.assertEqual(data.output,  'hi\n')
             return data
 
         d.addBoth(client_disconnect)
