@@ -12,10 +12,11 @@ log = logging.getLogger('channel')
 
 
 class Results:
-    def __init__(self, command, output, exitCode):
+    def __init__(self, command, output, exitCode, stderr):
         self.command = command
         self.output = output
         self.exitCode = exitCode
+        self.stderr = stderr
 
 
 class CommandChannel(channel.SSHChannel):
@@ -100,7 +101,9 @@ class CommandChannel(channel.SSHChannel):
             #self.result.callback((self.exit, self.data, self.err))
             self.result.callback(Results(self.command,
                                          self.data,
-                                         self.exit))
+                                         self.exit,
+                                         self.err))
+
     def eofReceived(self):
         self.timeoutCancel()
 
