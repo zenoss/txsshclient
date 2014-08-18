@@ -1,7 +1,6 @@
 
 import os
-from setuptools import setup
-from subprocess import Popen, PIPE
+from setuptools import setup, find_packages
 
 # Utility function to read the README file.
 def read(fname):
@@ -10,7 +9,7 @@ def read(fname):
 
 setup(
     name='txsshclient',
-    py_modules=['txsshclient'],
+    packages=find_packages(),
 
     version='0.1.0dev1',
     description="Twisted python asynchronous library for issueing commands and receiving or sending files over ssh.",
