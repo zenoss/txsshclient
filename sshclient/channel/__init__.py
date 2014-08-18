@@ -87,6 +87,7 @@ class CommandChannel(channel.SSHChannel):
         return req
 
     def dataReceived(self, data):
+        log.debug('[%s] Received %s' % (id(self), data))
         self.data = self.data + data
 
     def extReceived(self, dataType, data):
@@ -96,16 +97,15 @@ class CommandChannel(channel.SSHChannel):
     def request_exit_status(self, data):
         self.exit = struct.unpack('>L', data)[0]
 
-        log.debug('Sending results back to the callback')
+    def eofReceived(self):
+        self.timeoutCancel()
+        log.debug('[%s] Sending results back to the callback (%s)' % (id(self), self.data))
         if not self.result.called:
             #self.result.callback((self.exit, self.data, self.err))
             self.result.callback(Results(self.command,
                                          self.data,
                                          self.exit,
                                          self.err))
-
-    def eofReceived(self):
-        self.timeoutCancel()
 
 
 class SFTPChannel(channel.SSHChannel):
