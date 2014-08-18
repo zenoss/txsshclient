@@ -5,7 +5,7 @@ logging.basicConfig(level=logging.DEBUG)
 from twisted.python import log as twistedlog
 observer = twistedlog.PythonLoggingObserver()
 observer.start()
-log = logging.getLogger('SSHServer')
+log = logging.getLogger('txsshclient.SSHServer')
 
 from twisted.internet import defer
 from twisted.internet import reactor
@@ -154,7 +154,7 @@ class SSHServer(SSHFactory):
 
 
 class ServerProtocol(transport.SSHServerTransport):
-    log = logging.getLogger('ServerProtocol')
+    log = logging.getLogger('txsshclient.ServerProtocol')
 
     def connectionMade(self):
         log.info("Server Connection Made")

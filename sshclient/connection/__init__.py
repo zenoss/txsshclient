@@ -1,6 +1,6 @@
 from twisted.conch.ssh import connection
 import logging
-log = logging.getLogger('connection')
+log = logging.getLogger('txsshclient.connection')
 
 
 class Connection(connection.SSHConnection):

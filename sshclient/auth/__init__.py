@@ -7,7 +7,7 @@ import os
 from pprint import pformat
 
 import logging
-log = logging.getLogger('auth')
+log = logging.getLogger('txsshclient.auth')
 
 
 class SshUserNotSetError(Exception):

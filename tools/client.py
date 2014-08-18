@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.DEBUG)
 from twisted.python import log as twistedlog
 observer = twistedlog.PythonLoggingObserver()
 observer.start()
-log = logging.getLogger('client')
+log = logging.getLogger('txsshclient.client')
 
 options = {'hostname': '127.0.0.1',
            'port': 2222,

@@ -5,7 +5,7 @@ from sshclient import SSHClient
 from twisted.trial.unittest import TestCase
 from twisted.internet import reactor, defer
 import logging
-log = logging.getLogger('test_exec')
+log = logging.getLogger('txsshclient.test_exec')
 
 from twisted.cred.error import UnauthorizedLogin
 
@@ -23,7 +23,7 @@ from twisted.conch.ssh.keys import Key
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
 
-log = logging.getLogger('test_auth')
+log = logging.getLogger('txsshclient.test_auth')
 
 
 class SSHServer(SSHFactory):
