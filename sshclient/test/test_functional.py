@@ -10,7 +10,7 @@ import logging
 #from twisted.python import log as twistedlog
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
-log = logging.getLogger('test_functional')
+log = logging.getLogger('txsshclient.test_functional')
 
 import tempfile
 import os

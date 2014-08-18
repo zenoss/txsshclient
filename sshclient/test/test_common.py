@@ -26,7 +26,7 @@ from zope import interface
 from twisted.cred import portal
 import grp
 import logging
-log = logging.getLogger('test_common')
+log = logging.getLogger('txsshclient.test_common')
 
 privkey = '''-----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEAoplZwXoxPBnVVYyP76UkJDsH30la5pjWNRW0O+oEPM6mePh/
@@ -218,7 +218,7 @@ class SlowSSHServer(SSHServer):
 
 
 class ServerProtocol(transport.SSHServerTransport):
-    log = logging.getLogger('test_common - ServerProtocol')
+    log = logging.getLogger('txsshclient.test_common - ServerProtocol')
 
     def currentlyConnected(self):
         return self.factory.onConnectionLost
@@ -235,7 +235,7 @@ class ServerProtocol(transport.SSHServerTransport):
 
 
 class ClientProtocol(SSHTransport):
-    log = logging.getLogger('test_common - ServerProtocol')
+    log = logging.getLogger('txsshclient.test_common - ServerProtocol')
 
     def connectionMade(self):
         log.info("Client Connection Made, Calling Transport connectionMade")

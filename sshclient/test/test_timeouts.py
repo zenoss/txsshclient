@@ -9,7 +9,7 @@ import logging
 #from twisted.python import log as twistedlog
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
-log = logging.getLogger('test_timeouts')
+log = logging.getLogger('txsshclient.test_timeouts')
 
 import tempfile
 import os

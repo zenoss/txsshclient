@@ -3,7 +3,7 @@ from twisted.conch.ssh import transport
 from twisted.cred.error import UnauthorizedLogin
 
 import logging
-log = logging.getLogger('SSHTransport')
+log = logging.getLogger('txsshclient.SSHTransport')
 
 
 class SSHTransport(transport.SSHClientTransport):

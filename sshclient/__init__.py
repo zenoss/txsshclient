@@ -1,7 +1,7 @@
 #!/usr/local/bin/python
 
 import logging
-log = logging.getLogger('SSHClient')
+log = logging.getLogger('txsshclient.SSHClient')
 
 from twisted.internet.protocol import ReconnectingClientFactory
 #from twisted.conch.ssh import connection

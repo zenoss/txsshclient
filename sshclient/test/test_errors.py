@@ -4,7 +4,7 @@ from twisted.trial.unittest import TestCase
 from twisted.internet import reactor, defer
 import getpass
 import logging
-log = logging.getLogger('test_exec')
+log = logging.getLogger('txsshclient.test_exec')
 
 from twisted.internet.error import ConnectionDone, ConnectError, ConnectionLost
 import os
@@ -16,7 +16,7 @@ import logging
 #from twisted.python import log as twistedlog
 #observer = twistedlog.PythonLoggingObserver()
 #observer.start()
-log = logging.getLogger('test_errors')
+log = logging.getLogger('txsshclient.test_errors')
 
 
 def touch(path):

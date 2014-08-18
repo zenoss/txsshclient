@@ -8,7 +8,7 @@ from twisted.conch.ssh.filetransfer import FileTransferClient
 from twisted.internet.error import TimeoutError
 
 import logging
-log = logging.getLogger('channel')
+log = logging.getLogger('txsshclient.channel')
 
 
 class Results:
