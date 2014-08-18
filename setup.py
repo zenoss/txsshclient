@@ -7,11 +7,6 @@ from subprocess import Popen, PIPE
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
-requires = [
-    'twisted',
-    'pyasn1',
-    'PyCrypto'
-]
 
 setup(
     name='txsshclient',
@@ -39,8 +34,5 @@ setup(
     author_email='support@zenoss.com',
     url='http://github.com/zenoss/txsshclient',
     license='All Rights Reserved',
-    requires=requires,
-    setup_requires=requires,
-    install_requires=requires,
 )
 
